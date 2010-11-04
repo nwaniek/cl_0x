@@ -28,6 +28,7 @@ cleanup_opencl ()
 int
 main ()
 {
+	cl_int err;
 	cl::Kernel kernel;
 
 	atexit(cleanup_opencl);
@@ -51,9 +52,10 @@ main ()
 	create_mem_obj(ctx, gpuArray[1], CL_MEM_READ_ONLY, memsize);
 	create_mem_obj(ctx, gpuArray[2], CL_MEM_READ_ONLY, memsize);
 
-	// set_kernel_args(zonk, gpuArray[0]);
 
-	cl::set_kernel_args(kernel.k, gpuArray[0], gpuArray[1], gpuArray[2], dim);
+	err = kernel.set_args(gpuArray[0], gpuArray[1], gpuArray[2], dim);
+	if (err != CL_SUCCESS)
+		die("ERROR ZONKIHONKI\n");
 
 
 

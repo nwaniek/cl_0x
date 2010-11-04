@@ -54,46 +54,19 @@ set_kernel_args (cl_kernel &k, const Args&... args)
 
 
 
-
-
-
-
-
-
-
-
-
-
-/*
- * forward declarations --------------------------------------------------------
+/**
+ * struct Kernel - wrapping the cl_kernel object into some templated functions
+ * to reduce direct OpenCL function invocation/typing.
+ *
+ * @k:			the contained cl_kernel object
+ * @release_on_destroy:	determines if the contained cl_kernel object is released
+ *			by clReleaseKernel when the cl::Kernel object is
+ *			destroyed
  */
-#if 0
-namespace cl {
-	struct Kernel;
-
-	template <typename... Args>
-	cl_int set_kernel_args (Kernel &k, const Args&... args);
-
-	template <typename... Args>
-	cl_int set_kernel_args (cl_kernel &kernel, const Args&... args);
-};
-#endif
-
-
-
-/*
- * implementation --------------------------------------------------------------
- */
-
-
-
-/*
- * classes
- */
-
-
-struct Kernel {
+struct Kernel
+{
 	cl_kernel k;
+
 	bool release_on_destroy;
 
 
@@ -133,7 +106,6 @@ struct Kernel {
 			clReleaseKernel(k);
 	}
 
-#if 0
 
 	/**
 	 * set one or many kernel arguments. consecutive calls to this function
@@ -151,59 +123,13 @@ struct Kernel {
 	/**
 	 * set a specific kernel argument
 	 */
-	/*
 	template <typename T>
 	cl_int
 	set_arg (unsigned int n, T arg)
 	{
-		return set_kernel_args(kernel, n, arg);
+		return set_kernel_args(this->k, n, arg);
 	}
-	*/
-#endif
 };
-
-
-
-/*
- * functions
- */
-
-/*
-cl_int
-set_kernel_args (cl_kernel &, unsigned int)
-{
-	return CL_SUCCESS;
-}
-
-
-template <typename T, typename... Args>
-cl_int
-set_kernel_args (cl_kernel &kernel, unsigned int n, const T& value, const Args&... args)
-{
-	cl_int err;
-	err = clSetKernelArg(kernel, n, sizeof(T), (void*)&value);
-	return err |
-	       set_kernel_args(kernel, n + 1, args...);
-}
-
-
-template <typename... Args>
-cl_int
-set_kernel_args (cl_kernel &kernel, const Args&... args)
-{
-	return set_kernel_args(kernel, 0, args...);
-}
-*/
-
-/*
-template <typename... Args>
-cl_int
-set_kernel_args (Kernel &kernel, const Args&... args)
-{
-	return set_kernel_args(kernel.k, 0, args...);
-}
-
-*/
 
 
 } // namespace cl

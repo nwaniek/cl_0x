@@ -25,6 +25,7 @@
 
 include local.mk
 
+STANDARD   = c++0x
 TARGETNAME = zonk
 CC         = ccache g++
 VERSION    = `date '+%Y%m%d'`
@@ -36,7 +37,7 @@ CPPFLAGS   = -DVERSION=$(VERSION) \
 	     -DDEBUG \
 	     -DDEVICE_TYPE=CL_DEVICE_TYPE_$(DEVICE)
 CFLAGS     = -O3 -fomit-frame-pointer -funroll-loops -ffast-math -msse2       \
-	     $(INCS) $(CPPFLAGS) $(WARNINGS)
+	     $(INCS) $(CPPFLAGS) $(WARNINGS) -std=$(STANDARD)
 LDFLAGS    = $(LIBPATHS) $(LIBS)
 ROOTDIR    = $(PWD)
 SRCDIR     = $(ROOTDIR)/src

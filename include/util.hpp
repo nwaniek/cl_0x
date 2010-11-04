@@ -87,5 +87,20 @@ unmap (const cl_command_queue &cmdq, cl_mem &memobj, T *p)
 }
 
 
+
+/*
+ * create a memory buffer object on the device for a given context
+ */
+inline void
+create_mem_obj (const cl_context &ctx, cl_mem &memobj, cl_mem_flags flags,
+		size_t size)
+{
+	cl_int err;
+	memobj = clCreateBuffer(ctx, flags, size, NULL, &err);
+	if (err != CL_SUCCESS)
+		die("ERROR: Could not allocate memory buffer object\n");
+}
+
+
 #endif /* __UTIL_HPP__862143F7_968A_412F_9E6C_219937FCD443 */
 

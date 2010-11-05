@@ -2,8 +2,6 @@
 #include <CL/cl.h>
 #include "cl_0x.hpp"
 #include "util.hpp"
-#include "testing.hpp"
-#include <typeinfo>
 
 static cl_platform_id pid;
 static cl_device_id dev;

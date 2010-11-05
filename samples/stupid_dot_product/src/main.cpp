@@ -34,7 +34,7 @@ main ()
 
 	atexit(cleanup_opencl);
 	setup_opencl(&pid, &dev, &ctx, &cmdq);
-	compile_kernel("cl/dotprod.cl", "dotprod", &ctx, &prog, &(kernel.k));
+	compile_kernel("cl/dotprod.cl", "dotprod", &ctx, &prog, &(kernel.cl_obj));
 
 	const unsigned int dim = 100000;
 	const size_t memsize = sizeof(cl_float) * dim;
@@ -75,7 +75,7 @@ main ()
 	// call the kernel
 	size_t threads = 1024;
 	size_t tpb = 64;
-	err = clEnqueueNDRangeKernel(cmdq, kernel.k, 1, NULL, &threads, &tpb, 0,
+	err = clEnqueueNDRangeKernel(cmdq, kernel.cl_obj, 1, NULL, &threads, &tpb, 0,
 			NULL, &ev[0]);
 	if (err != CL_SUCCESS)
 		die("ERROR: Could not enqueue kernel\n");

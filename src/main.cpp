@@ -32,7 +32,7 @@ int
 main ()
 {
 	cl_int err;
-	cl::Kernel kernel;
+	cl_0x::Kernel kernel;
 
 	atexit(cleanup_opencl);
 	setup_opencl(&pid, &dev, &ctx, &cmdq);

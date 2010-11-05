@@ -19,13 +19,41 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+
+/*
+ * This file is considered to be a W.I.P. and will be extended as needed
+ */
+
 #ifndef __CL0X_HPP__CAC0CF09_2899_40BA_B8A4_8A664E92CA16
 #define __CL0X_HPP__CAC0CF09_2899_40BA_B8A4_8A664E92CA16
 
 #include <CL/cl.h>
 
 
-namespace cl {
+namespace cl_0x {
+
+
+template <typename T>
+struct CLTypeTraits
+{
+	typedef T type;
+	static const size_t size = sizeof(T);
+};
+
+
+template <>
+struct CLTypeTraits<float>
+{
+	static const size_t size = sizeof(cl_float);
+};
+
+
+template <>
+struct CLTypeTraits<double>
+{
+	static const size_t size = sizeof(cl_double);
+};
+
 
 
 cl_int
@@ -40,7 +68,7 @@ cl_int
 set_kernel_args (cl_kernel &k, int n, const T &arg, const Args&... args)
 {
 	cl_int err;
-	err = clSetKernelArg(k, n, sizeof(T), (void*)&arg);
+	err = clSetKernelArg(k, n, CLTypeTraits<T>::size, (void*)&arg);
 	return err |
 	       set_kernel_args(k, n+1, args...);
 }
@@ -91,7 +119,7 @@ struct Kernel
 	 *			shall be released when cl::Kernel object is
 	 *			destroyed
 	 */
-	Kernel (cl_kernel kernel, bool release_on_destroy = false)
+	Kernel (cl_kernel &kernel, bool release_on_destroy = false)
 		: k(kernel)
 		, release_on_destroy(release_on_destroy)
 	{}
@@ -123,6 +151,9 @@ struct Kernel
 
 	/**
 	 * set a specific kernel argument
+	 *
+	 * @n:		Argument index (starting by 0)
+	 * @arg:	Argument value
 	 */
 	template <typename T>
 	cl_int

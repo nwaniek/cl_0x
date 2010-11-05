@@ -1,5 +1,5 @@
 /*
- * Copyright © 2010 Nicolai Waniek <nicolai dot waniek at sphere71 dot com>
+ * Copyright (c) 2010 Nicolai Waniek <rochus at rochus dot net>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal

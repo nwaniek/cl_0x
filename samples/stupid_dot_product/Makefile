@@ -29,7 +29,7 @@ STANDARD   = c++0x
 TARGETNAME = zonk
 CC         = ccache g++
 VERSION    = `date '+%Y%m%d'`
-INCS       = -I include
+INCS       = -I include -I../../
 LIBS       = -lOpenCL
 WARNINGS   = -Wall -Woverloaded-virtual -Wextra -Wpointer-arith -Wcast-qual   \
 	     -Wswitch-default -Wcast-align -Wundef -Wno-empty-body

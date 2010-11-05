@@ -21,7 +21,8 @@
  */
 
 /*
- * This file is considered to be a W.I.P. and will be extended as needed
+ * This file is considered to be a W.I.P. and will be extended as needed and
+ * might yet be changed heavily!
  */
 
 #ifndef __CL0X_HPP__CAC0CF09_2899_40BA_B8A4_8A664E92CA16
@@ -33,27 +34,21 @@
 namespace cl_0x {
 
 
+/**
+ * the TypeTraits class encapsulates type size information for usage in
+ * OpenCL functions like clSetKernelArg.
+ *
+ * @type:	The contained type
+ * @size:	The type size as returned by sizeof
+ *
+ * specialize the CLTypeTraits class with a custom type when there is need.
+ */
 template <typename T>
 struct CLTypeTraits
 {
 	typedef T type;
 	static const size_t size = sizeof(T);
 };
-
-
-template <>
-struct CLTypeTraits<float>
-{
-	static const size_t size = sizeof(cl_float);
-};
-
-
-template <>
-struct CLTypeTraits<double>
-{
-	static const size_t size = sizeof(cl_double);
-};
-
 
 
 cl_int
@@ -82,6 +77,36 @@ set_kernel_args (cl_kernel &k, const Args&... args)
 }
 
 
+/**
+ *
+ */
+template <typename CLType, cl_int (*RFunc)(CLType)>
+struct CLObjContainer
+{
+	CLType cl_obj;
+	bool release_on_destroy;
+
+	/**
+	 * creates a new Container to hold a cl object of type CLType
+	 *
+	 * @obj:		The object, or therefore the pointer to an
+	 *			OpenCL object struct
+	 * @release_on_destroy: call the corresponding RFunc on the object when
+	 *			the instance gets destroyed or not
+	 */
+	CLObjContainer (CLType cl_obj = NULL, bool release_on_destroy = true)
+		: cl_obj(cl_obj)
+		, release_on_destroy(release_on_destroy)
+	{}
+
+	~CLObjContainer ()
+	{
+		if (release_on_destroy)
+			RFunc(cl_obj);
+	}
+};
+
+
 
 /**
  * struct Kernel - wrapping the cl_kernel object into some templated functions
@@ -92,25 +117,8 @@ set_kernel_args (cl_kernel &k, const Args&... args)
  *			by clReleaseKernel when the cl::Kernel object is
  *			destroyed
  */
-struct Kernel
+struct Kernel : CLObjContainer<cl_kernel, clReleaseKernel>
 {
-	cl_kernel k;
-
-	bool release_on_destroy;
-
-
-	/**
-	 * Create a new kernel instance.
-	 *
-	 * @release_on_destroy:	Decide whether the contained cl_kernel object
-	 *			shall be released when cl::Kernel object is
-	 *			destroyed
-	 */
-	Kernel (bool release_on_destroy = true)
-		: release_on_destroy(release_on_destroy)
-	{}
-
-
 	/**
 	 * create a new kernel instance by passing the cl_kernel object to it.
 	 *
@@ -119,21 +127,9 @@ struct Kernel
 	 *			shall be released when cl::Kernel object is
 	 *			destroyed
 	 */
-	Kernel (cl_kernel &kernel, bool release_on_destroy = false)
-		: k(kernel)
-		, release_on_destroy(release_on_destroy)
+	Kernel (cl_kernel kernel = NULL, bool release_on_destroy = true)
+		: CLObjContainer(kernel, release_on_destroy)
 	{}
-
-
-	/**
-	 * according to the member release_on_destroy, the cl_kernel object
-	 * might get release via clReleaseKernel
-	 */
-	~Kernel ()
-	{
-		if (release_on_destroy)
-			clReleaseKernel(k);
-	}
 
 
 	/**
@@ -145,7 +141,7 @@ struct Kernel
 	cl_int
 	set_args (const Args&... args)
 	{
-		return set_kernel_args(this->k, args...);
+		return set_kernel_args(this->cl_obj, args...);
 	}
 
 
@@ -159,9 +155,114 @@ struct Kernel
 	cl_int
 	set_arg (unsigned int n, T arg)
 	{
-		return set_kernel_args(this->k, n, arg);
+		return set_kernel_args(this->cl_obj, n, arg);
 	}
 };
+
+
+struct Context : CLObjContainer<cl_context, clReleaseContext>
+{};
+
+
+struct CommandQueue : CLObjContainer<cl_command_queue, clReleaseCommandQueue>
+{};
+
+
+template <typename T>
+struct Buffer: CLObjContainer<cl_mem, clReleaseMemObject>
+{
+	//! mapping pointer
+	T *ptr;
+
+	//! size of memory buffer object
+	size_t size;
+
+
+	Buffer (cl_mem buffer = NULL, bool release_on_destroy = true)
+		: CLObjContainer(buffer, release_on_destroy)
+		, ptr(NULL)
+		, size(0)
+	{}
+
+
+	cl_int
+	mallocHost (const cl_context ctx, size_t size,
+			cl_mem_flags flags = CL_MEM_READ_WRITE)
+	{
+		cl_int err;
+		cl_obj = clCreateBuffer(ctx,
+				CL_MEM_ALLOC_HOST_PTR | flags, size, NULL,
+				&err);
+		this->size = size;
+		return err;
+	}
+
+
+	cl_int
+	mallocHost (const Context &ctx, size_t size,
+			cl_mem_flags flags = CL_MEM_READ_WRITE)
+	{
+		return mallocHost(ctx.cl_obj, size, flags);
+	}
+
+
+
+	T*
+	map (const cl_command_queue q, cl_int *err = NULL,
+			cl_map_flags flags = CL_MAP_READ | CL_MAP_WRITE,
+			cl_bool blocked = true)
+	{
+		cl_int e;
+		ptr = (T*)clEnqueueMapBuffer(q, this->cl_obj, blocked, flags, 0,
+				this->size, 0, NULL, NULL, &e);
+		if (err)
+			*err = e;
+		return ptr;
+	}
+
+
+	T*
+	map (const CommandQueue &q, cl_int *err = NULL,
+			cl_map_flags flags = CL_MAP_READ | CL_MAP_WRITE,
+			cl_bool blocked = true)
+	{
+		return this->map(q.cl_obj, err, flags, blocked);
+	}
+
+
+	cl_int
+	unmap (const cl_command_queue q, cl_event *event = NULL)
+	{
+		cl_int err;
+		cl_event e;
+		err = clEnqueueUnmapMemObject(q, this->cl_obj, (void*)ptr, 0,
+				NULL, &e);
+		if (event)
+			*event = e;
+		return err;
+	}
+
+
+	cl_int
+	unmap (const CommandQueue &q, cl_event *event = NULL)
+	{
+		return this->unmap(q.cl_obj, event);
+	}
+
+
+};
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 } // namespace cl

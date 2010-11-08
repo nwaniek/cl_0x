@@ -23,15 +23,46 @@
 /*
  * This file is considered to be a W.I.P. and will be extended as needed and
  * might yet be changed heavily!
+ *
+ *
+ *  incomplete TODO list
+ * ======================
+ * - function name consistency (CamelCasing, underscore_names)
+ *
  */
+
+
 
 #ifndef __CL0X_HPP__CAC0CF09_2899_40BA_B8A4_8A664E92CA16
 #define __CL0X_HPP__CAC0CF09_2899_40BA_B8A4_8A664E92CA16
 
 #include <CL/cl.h>
+#include <fstream>
+#include <string>
+#include <cstring>
+
+// for debug:
+#include <cstdio>
 
 
 namespace cl_0x {
+
+
+
+// forward declarations (needed for argument size and pointer deduction)
+template <typename CLType, cl_int (*RFunc)(CLType)> struct CLObjContainer;
+template <typename T> struct Buffer;
+
+
+/**
+ * class to pass local memory to the set_kernel_args function
+ */
+struct LocalMemory
+{
+	size_t size;
+
+	LocalMemory(size_t size) : size(size) {}
+};
 
 
 /**
@@ -47,8 +78,94 @@ template <typename T>
 struct CLTypeTraits
 {
 	typedef T type;
-	static const size_t size = sizeof(T);
+
+	static size_t
+	size (const T &)
+	{
+		return sizeof(T);
+	}
 };
+
+
+template <>
+struct CLTypeTraits <LocalMemory>
+{
+	static size_t
+	size (const LocalMemory &arg)
+	{
+		return arg.size;
+	}
+};
+
+
+template <typename CLType, cl_int (*RFunc)(CLType)>
+struct CLTypeTraits <CLObjContainer<CLType, RFunc>>
+{
+	static size_t
+	size (const CLObjContainer<CLType, RFunc> &)
+	{
+		return sizeof(CLType);
+	}
+};
+
+
+template <typename T>
+struct CLTypeTraits <Buffer<T>>
+{
+	static size_t
+	size (const Buffer<T> &)
+	{
+		return sizeof(cl_mem);
+	}
+};
+
+
+/**
+ * Argument Wrapper to make it possible to pass local memory to the kernel by
+ * set_kernel_args
+ */
+template <typename T>
+struct KernelArg
+{
+	static const void*
+	ptr (const T &arg)
+	{
+		return &arg;
+	}
+};
+
+
+template <>
+struct KernelArg<LocalMemory>
+{
+	static const void*
+	ptr (const LocalMemory &) {
+		return NULL;
+	}
+};
+
+
+template <typename CLType, cl_int (*RFunc)(CLType)>
+struct KernelArg <CLObjContainer<CLType, RFunc>>
+{
+	static const void*
+	ptr (const CLObjContainer<CLType, RFunc> &arg)
+	{
+		return &(arg.cl_obj);
+	}
+};
+
+
+template <typename T>
+struct KernelArg <Buffer<T>>
+{
+	static const void*
+	ptr (const Buffer<T> &arg)
+	{
+		return &(arg.cl_obj);
+	}
+};
+
 
 
 cl_int
@@ -62,8 +179,13 @@ template <typename T, typename... Args>
 cl_int
 set_kernel_args (cl_kernel &k, int n, const T &arg, const Args&... args)
 {
+
+	printf("%ld\n", CLTypeTraits<T>::size(arg));
+
 	cl_int err;
-	err = clSetKernelArg(k, n, CLTypeTraits<T>::size, (void*)&arg);
+	err = clSetKernelArg(k, n,
+			CLTypeTraits<T>::size(arg),
+			KernelArg<T>::ptr(arg));
 	return err |
 	       set_kernel_args(k, n+1, args...);
 }
@@ -77,14 +199,28 @@ set_kernel_args (cl_kernel &k, const Args&... args)
 }
 
 
+
+/**
+ * empty release function for classes inheriting from CLObjContainer that don't
+ * need or have a release function
+ */
+template <typename T>
+constexpr cl_int empty_release (T*) { return CL_SUCCESS; }
+
+
 /**
  *
  */
-template <typename CLType, cl_int (*RFunc)(CLType)>
+template <typename CLType, cl_int (*RFunc)(CLType) = empty_release>
 struct CLObjContainer
 {
+	typedef CLType type;
+	typedef CLObjContainer<CLType, RFunc> container_type;
+
+
 	CLType cl_obj;
 	bool release_on_destroy;
+
 
 	/**
 	 * creates a new Container to hold a cl object of type CLType
@@ -94,18 +230,108 @@ struct CLObjContainer
 	 * @release_on_destroy: call the corresponding RFunc on the object when
 	 *			the instance gets destroyed or not
 	 */
+	explicit
 	CLObjContainer (CLType cl_obj = NULL, bool release_on_destroy = true)
 		: cl_obj(cl_obj)
 		, release_on_destroy(release_on_destroy)
 	{}
 
+
 	~CLObjContainer ()
 	{
-		if (release_on_destroy)
-			RFunc(cl_obj);
+		if (release_on_destroy && this->cl_obj)
+			RFunc(this->cl_obj);
+	}
+
+
+	CLType operator() () const
+	{
+		return this->cl_obj;
 	}
 };
 
+
+struct Platform : CLObjContainer<cl_platform_id>
+{
+	cl_int
+	select_first ()
+	{
+		return clGetPlatformIDs(1, &(this->cl_obj), NULL);
+	}
+};
+
+
+struct Device : CLObjContainer<cl_device_id>
+{
+	cl_int
+	select_first (const Platform &platform, cl_device_type devtype)
+	{
+		return clGetDeviceIDs(platform(), devtype, 1, &(this->cl_obj),
+				NULL);
+	}
+};
+
+
+struct Context : CLObjContainer<cl_context, clReleaseContext>
+{
+	cl_int
+	create (const Platform &platform, Device &device)
+	{
+		cl_int err;
+		cl_context_properties props[] = {CL_CONTEXT_PLATFORM,
+			(cl_context_properties)platform(), 0};
+		this->cl_obj = clCreateContext(props, 1, &device.cl_obj, NULL, NULL,
+				&err);
+		return err;
+	}
+};
+
+
+struct CommandQueue : CLObjContainer<cl_command_queue, clReleaseCommandQueue>
+{
+	cl_int
+	create (const Device &device, const Context &context)
+	{
+		cl_int err;
+		this->cl_obj = clCreateCommandQueue(context(), device(), 0,
+				&err);
+		return err;
+	}
+};
+
+
+struct Program : CLObjContainer<cl_program, clReleaseProgram>
+{
+	cl_int
+	build_from_source (const Context &context, const char *src)
+	{
+		cl_int err;
+		size_t len[] = {strlen(src)};
+		this->cl_obj = clCreateProgramWithSource(context(), 1, &src,
+				len, &err);
+		if (err != CL_SUCCESS)
+			return err;
+
+		return clBuildProgram(this->cl_obj, 0, NULL, NULL, NULL, NULL);
+	}
+
+
+	cl_int
+	build_from_file (const Context &context, const char *fname)
+	{
+		cl_int err;
+		std::ifstream f(fname);
+		if (!f.is_open())
+			return CL_INVALID_PROGRAM;
+
+		std::string str((std::istreambuf_iterator<char>(f)),
+				std::istreambuf_iterator<char>());
+		err = build_from_source(context, str.c_str());
+		f.close();
+
+		return err;
+	}
+};
 
 
 /**
@@ -157,15 +383,19 @@ struct Kernel : CLObjContainer<cl_kernel, clReleaseKernel>
 	{
 		return set_kernel_args(this->cl_obj, n, arg);
 	}
+
+
+	/**
+	 * create a kernel by name from a given program object
+	 */
+	cl_int
+	create (const Program &program, const char *kernel_name)
+	{
+		cl_int err;
+		this->cl_obj = clCreateKernel(program(), kernel_name, &err);
+		return err;
+	}
 };
-
-
-struct Context : CLObjContainer<cl_context, clReleaseContext>
-{};
-
-
-struct CommandQueue : CLObjContainer<cl_command_queue, clReleaseCommandQueue>
-{};
 
 
 template <typename T>
@@ -177,11 +407,15 @@ struct Buffer: CLObjContainer<cl_mem, clReleaseMemObject>
 	//! size of memory buffer object
 	size_t size;
 
+	//! when bound to a command queue pointer to it
+	const CommandQueue *cmdq;
+
 
 	Buffer (cl_mem buffer = NULL, bool release_on_destroy = true)
 		: CLObjContainer(buffer, release_on_destroy)
 		, ptr(NULL)
 		, size(0)
+		, cmdq(NULL)
 	{}
 
 
@@ -202,7 +436,27 @@ struct Buffer: CLObjContainer<cl_mem, clReleaseMemObject>
 	mallocHost (const Context &ctx, size_t size,
 			cl_mem_flags flags = CL_MEM_READ_WRITE)
 	{
-		return mallocHost(ctx.cl_obj, size, flags);
+		return mallocHost(ctx(), size, flags);
+	}
+
+
+
+	cl_int
+	mallocDevice (const cl_context ctx, size_t size,
+			cl_mem_flags flags = CL_MEM_READ_WRITE)
+	{
+		cl_int err;
+		cl_obj = clCreateBuffer(ctx, flags, size, NULL, &err);
+		this->size = size;
+		return err;
+	}
+
+
+	cl_int
+	mallocDevice (const Context &ctx, size_t size,
+			cl_mem_flags flags = CL_MEM_READ_WRITE)
+	{
+		return mallocDevice(ctx(), size, flags);
 	}
 
 
@@ -226,7 +480,7 @@ struct Buffer: CLObjContainer<cl_mem, clReleaseMemObject>
 			cl_map_flags flags = CL_MAP_READ | CL_MAP_WRITE,
 			cl_bool blocked = true)
 	{
-		return this->map(q.cl_obj, err, flags, blocked);
+		return this->map(q(), err, flags, blocked);
 	}
 
 
@@ -246,8 +500,60 @@ struct Buffer: CLObjContainer<cl_mem, clReleaseMemObject>
 	cl_int
 	unmap (const CommandQueue &q, cl_event *event = NULL)
 	{
-		return this->unmap(q.cl_obj, event);
+		return this->unmap(q(), event);
 	}
+
+
+
+	// TODO: extend for events! reflect in other copy_to functions
+	// TODO: provide operator= for copy operation
+	cl_int
+	copy_to (const cl_command_queue q, Buffer<T> &buffer, size_t size = 0,
+		size_t src_offset = 0, size_t dst_offset = 0)
+	{
+		if (size == 0)
+			size = this->size;
+
+		return clEnqueueCopyBuffer(q, this->cl_obj, buffer(),
+				src_offset, dst_offset, size, 0, NULL, NULL);
+
+	}
+
+
+	cl_int
+	copy_to (const CommandQueue &q, Buffer<T> &buffer, size_t size = 0,
+		size_t src_offset = 0, size_t dst_offset = 0)
+	{
+		return copy_to(q(), buffer, size, src_offset, dst_offset);
+	}
+
+
+	/**
+	 * copy_to function when the buffer is already bound to a command queue
+	 */
+	cl_int
+	copy_to (Buffer<T> &buffer, size_t size = 0, size_t src_offset = 0,
+			size_t dst_offset = 0)
+	{
+		if (!(this->cmdq))
+			return CL_INVALID_COMMAND_QUEUE;
+
+		return copy_to(*(this->cmdq), buffer, size, src_offset,
+				dst_offset);
+	}
+
+
+	/*
+	 * bind the buffer object to different cl-objects (so that it might not
+	 * be required to pass those as additional parameters in other method
+	 * calls
+	 */
+	void bind_to (const CommandQueue &q)
+	{
+		this->cmdq = &q;
+	}
+
+
 
 
 };

@@ -41,12 +41,11 @@
 #include <string>
 #include <cstring>
 
-// for debug:
+#ifdef DEBUG
 #include <cstdio>
-
+#endif
 
 namespace cl_0x {
-
 
 
 // forward declarations (needed for argument size and pointer deduction)
@@ -179,9 +178,6 @@ template <typename T, typename... Args>
 cl_int
 set_kernel_args (cl_kernel &k, int n, const T &arg, const Args&... args)
 {
-
-	printf("%ld\n", CLTypeTraits<T>::size(arg));
-
 	cl_int err;
 	err = clSetKernelArg(k, n,
 			CLTypeTraits<T>::size(arg),
@@ -214,7 +210,7 @@ constexpr cl_int empty_release (T*) { return CL_SUCCESS; }
 template <typename CLType, cl_int (*RFunc)(CLType) = empty_release>
 struct CLObjContainer
 {
-	typedef CLType type;
+	typedef CLType cl_type;
 	typedef CLObjContainer<CLType, RFunc> container_type;
 
 
@@ -271,6 +267,18 @@ struct Device : CLObjContainer<cl_device_id>
 	}
 };
 
+struct DeviceJunction
+{
+	const Device *device;
+
+	DeviceJunction () : device(NULL) {}
+
+	void bind_to (const Device &device)
+	{
+		this->device = &device;
+	}
+};
+
 
 struct Context : CLObjContainer<cl_context, clReleaseContext>
 {
@@ -286,8 +294,21 @@ struct Context : CLObjContainer<cl_context, clReleaseContext>
 	}
 };
 
+struct ContextJunction
+{
+	const Context *context;
+
+	ContextJunction() : context(NULL) {}
+
+	void bind_to (const Context &context)
+	{
+		this->context = &context;
+	}
+};
+
 
 struct CommandQueue : CLObjContainer<cl_command_queue, clReleaseCommandQueue>
+		, ContextJunction, DeviceJunction
 {
 	cl_int
 	create (const Device &device, const Context &context)
@@ -299,8 +320,21 @@ struct CommandQueue : CLObjContainer<cl_command_queue, clReleaseCommandQueue>
 	}
 };
 
+struct CommandQueueJunction
+{
+	const CommandQueue *command_queue;
+
+	CommandQueueJunction () : command_queue(NULL) {}
+
+	void bind_to (const CommandQueue &q)
+	{
+		this->command_queue = &q;
+	}
+};
+
 
 struct Program : CLObjContainer<cl_program, clReleaseProgram>
+		 , ContextJunction
 {
 	cl_int
 	build_from_source (const Context &context, const char *src)
@@ -344,6 +378,7 @@ struct Program : CLObjContainer<cl_program, clReleaseProgram>
  *			destroyed
  */
 struct Kernel : CLObjContainer<cl_kernel, clReleaseKernel>
+		, CommandQueueJunction
 {
 	/**
 	 * create a new kernel instance by passing the cl_kernel object to it.
@@ -395,11 +430,35 @@ struct Kernel : CLObjContainer<cl_kernel, clReleaseKernel>
 		this->cl_obj = clCreateKernel(program(), kernel_name, &err);
 		return err;
 	}
+
+
+	/**
+	 * run the kernel on the associated context/commandq.
+	 */
+	cl_int
+	run (cl_uint work_dim, const size_t *global_work_size,
+			const size_t *local_work_size,
+			const size_t *global_work_offset = 0,
+			cl_uint num_events_in_wait_list = 0,
+			const cl_event 	*event_wait_list = NULL,
+			cl_event *event = NULL)
+	{
+
+		if (!(this->command_queue))
+			return CL_INVALID_COMMAND_QUEUE;
+
+		return clEnqueueNDRangeKernel(this->command_queue->cl_obj,
+				this->cl_obj, work_dim, global_work_offset,
+				global_work_size, local_work_size,
+				num_events_in_wait_list, event_wait_list,
+				event);
+	}
 };
 
 
 template <typename T>
 struct Buffer: CLObjContainer<cl_mem, clReleaseMemObject>
+	       , CommandQueueJunction
 {
 	//! mapping pointer
 	T *ptr;
@@ -407,15 +466,11 @@ struct Buffer: CLObjContainer<cl_mem, clReleaseMemObject>
 	//! size of memory buffer object
 	size_t size;
 
-	//! when bound to a command queue pointer to it
-	const CommandQueue *cmdq;
-
 
 	Buffer (cl_mem buffer = NULL, bool release_on_destroy = true)
 		: CLObjContainer(buffer, release_on_destroy)
 		, ptr(NULL)
 		, size(0)
-		, cmdq(NULL)
 	{}
 
 
@@ -535,25 +590,12 @@ struct Buffer: CLObjContainer<cl_mem, clReleaseMemObject>
 	copy_to (Buffer<T> &buffer, size_t size = 0, size_t src_offset = 0,
 			size_t dst_offset = 0)
 	{
-		if (!(this->cmdq))
+		if (!(this->command_queue))
 			return CL_INVALID_COMMAND_QUEUE;
 
-		return copy_to(*(this->cmdq), buffer, size, src_offset,
+		return copy_to(*(this->command_queue), buffer, size, src_offset,
 				dst_offset);
 	}
-
-
-	/*
-	 * bind the buffer object to different cl-objects (so that it might not
-	 * be required to pass those as additional parameters in other method
-	 * calls
-	 */
-	void bind_to (const CommandQueue &q)
-	{
-		this->cmdq = &q;
-	}
-
-
 
 
 };

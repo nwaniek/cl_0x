@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2010 Nicolai Waniek <rochus at rochus dot net>
+ * MIT/X Consortium License
+ *
+ * © 2010 - 2011 Nicolai Waniek <rochus at rochus dot net>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
